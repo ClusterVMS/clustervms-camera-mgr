@@ -1,0 +1,9 @@
+.dockerignore
+.git
+.gitignore
+.vscode
+/target
+docker-compose*
+Dockerfile*
+LICENSE
+README.md
