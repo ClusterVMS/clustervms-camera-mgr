@@ -7,8 +7,6 @@ use rocket::serde::json::{json, Json, Value};
 use rocket::State;
 use std::error;
 use std::ops::Deref;
-use std::path::Path;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 
@@ -52,17 +50,11 @@ pub fn generate_camera_id(existing_ids: &CameraMap) -> CameraId {
 	}
 }
 
-
-
-const cameras_file_name : &str = "/tmp/clustervms/clustervms.yaml";
-
 async fn write_config_file_inner(cameras: &CameraMap) -> Result<(), Box<dyn error::Error>> {
-	let file = tokio::fs::File::create(Path::new(cameras_file_name)).await?;
-
-	let yaml = serde_yaml::to_vec(&cameras)?;
-	let mut writer = tokio::io::BufWriter::new(file);
-	writer.write(&yaml).await?;
-	writer.flush().await?;
+	// Config is split between multiple files, with no strictly-enforced organization.
+	// Ultimately, writing the config will likely be the job of a "config manager" component.
+	// For now, we'll just log a warning.
+	warn!("Writing config file not yet supported");
 	Ok(())
 }
 
