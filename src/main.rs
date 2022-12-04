@@ -4,11 +4,12 @@
 #[macro_use] extern crate rocket;
 #[macro_use] extern crate serde_derive;
 
+use clap::{Command, Arg, ArgAction};
+use clustervms::config;
 use rocket::{Request, Response};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 
-mod common;
 mod rest_api;
 
 
@@ -34,9 +35,38 @@ impl Fairing for CORS {
 }
 
 
-#[launch]
-fn rocket() -> _ {
+#[rocket::main]
+async fn main() -> anyhow::Result<()> {
+	let matches = Command::new("clustervms-camera-mgr")
+		.version("0.0.2")
+		.author("Alicrow")
+		.about("Camera manager for ClusterVMS.")
+		.arg(
+			Arg::new("config")
+				.action(ArgAction::Append)	// Allow argument to be specified multiple times
+				.short('c')
+				.long("config")
+				.help("TOML file with ClusterVMS config")
+		)
+		.get_matches();
+
+	let config_filename_matches = matches.get_many::<String>("config");
+	let config_filenames = match config_filename_matches {
+		Some(filenames) => filenames.map(|v| v.as_str()).collect(),
+		None => {
+			// Not using error! because logging is not yet initialized through Rocket.
+			println!("Error: No config files specified");
+			Vec::new()
+		}
+	};
+	let mut config_manager = config::ConfigManager::new();
+	config_manager.read_config(config_filenames)?;
+
 	rocket::build()
-		.attach(rest_api::stage())
+		.attach(rest_api::stage(&config_manager))
 		.attach(CORS)
+		.launch()
+		.await?;
+
+	anyhow::Ok(())
 }

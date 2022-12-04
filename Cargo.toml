@@ -1,14 +1,18 @@
 [package]
 name = "clustervms-camera-mgr"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.66"
+clap = "4.0.23"
+clustervms = { git = "https://github.com/ClusterVMS/clustervms-rs" }
 dirs = "4.0"
+log = "0.4"
+rand = "0.8.5"
 rocket = { version = "0.5.0-rc.2", features = ["json"] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 serde_yaml = "0.8"
 tokio = { version = "1.17", features = ["sync", "fs"]}
-log = "0.4"

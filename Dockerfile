@@ -1,7 +1,8 @@
 # Base image for the cargo-chef compilation steps
 # In order to target alpine as the runtime, which uses musl libc, we need to use muslrust
-FROM clux/muslrust:1.62.0-nightly-2022-04-17 as chef
-RUN cargo install cargo-chef --locked
+# We also need to use the nightly version of Rust because Rocket requires it
+FROM clux/muslrust:1.66.0-nightly-2022-09-24 as chef
+RUN cargo install cargo-chef@0.1.44 --locked
 WORKDIR /app
 
 
