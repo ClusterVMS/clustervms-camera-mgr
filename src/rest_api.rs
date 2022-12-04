@@ -48,7 +48,7 @@ pub fn generate_camera_id(existing_ids: &CameraMap) -> CameraId {
 		// If the generated ID is not taken, return it.
 		if !existing_ids.contains_key(id.as_str()) {
 			return id;
-	}
+		}
 	}
 }
 
