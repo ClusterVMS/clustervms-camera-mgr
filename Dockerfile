@@ -32,4 +32,5 @@ USER clustervms-user
 ENV ROCKET_ADDRESS="0.0.0.0"
 WORKDIR /app
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/clustervms-camera-mgr /app/clustervms-camera-mgr
+COPY ./Rocket.toml /app/
 ENTRYPOINT ["/app/clustervms-camera-mgr"]

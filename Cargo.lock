@@ -180,8 +180,8 @@ dependencies = [
 
 [[package]]
 name = "clustervms"
-version = "0.0.1"
-source = "git+https://github.com/ClusterVMS/clustervms-rs#9278ba4c60fd9ae4b8191ba31aca41d14d2e7f60"
+version = "0.0.3"
+source = "git+https://github.com/ClusterVMS/clustervms-rs#6aa4af52bf3563df09c1bec9947ea29500b06e12"
 dependencies = [
  "figment",
  "serde",
@@ -191,7 +191,7 @@ dependencies = [
 
 [[package]]
 name = "clustervms-camera-mgr"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "clap",

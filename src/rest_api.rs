@@ -1,4 +1,4 @@
-use clustervms::{BasicCameraInfo, Camera, CameraId, CameraMap};
+use clustervms::{BasicCameraInfo, Camera, CameraId, CameraMap, Stream, StreamId};
 use clustervms::config::ConfigManager;
 use log::error;
 use rand::{thread_rng, Rng};
@@ -22,6 +22,11 @@ async fn list_cameras(cameras_state: &State<RwLock<CameraMap>>) -> Json<Vec<Basi
 	)
 }
 
+#[get("/?format=full")]
+async fn list_cameras_full(cameras_state: &State<RwLock<CameraMap>>) -> Json<Vec<Camera>> {
+	let cameras = cameras_state.read().await;
+	Json((*cameras).clone().values().cloned().collect())
+}
 #[get("/<id>")]
 async fn get_camera(id: CameraId, cameras_state: &State<RwLock<CameraMap>>) -> Option<Json<Camera>> {
 	let cameras = cameras_state.read().await;
@@ -38,6 +43,16 @@ async fn new_camera(camera_json: Json<Camera>, cameras_state: &State<RwLock<Came
 	cameras.insert(id, camera.clone());
 	write_config_file(cameras.deref()).await;
 	Some(Json(camera))
+}
+
+#[get("/<camera_id>/streams/<stream_id>")]
+async fn get_stream(camera_id: CameraId, stream_id: StreamId, cameras_state: &State<RwLock<CameraMap>>) -> Option<Json<Stream>> {
+	let cameras = cameras_state.read().await;
+	cameras.get(&camera_id).and_then(|camera| {
+		camera.streams.get(&stream_id).map(|stream| {
+			Json(stream.clone())
+		})
+	})
 }
 
 pub fn generate_camera_id(existing_ids: &CameraMap) -> CameraId {
@@ -91,6 +106,6 @@ pub fn stage(config_mgr: &ConfigManager) -> rocket::fairing::AdHoc {
 		rocket
 			.manage(cameras_lock)
 			.register("/", catchers![not_found])
-			.mount("/v0/cameras", routes![list_cameras, get_camera, new_camera])
+			.mount("/v0/cameras", routes![list_cameras, list_cameras_full, get_camera, new_camera, get_stream])
 	})
 }

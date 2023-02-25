@@ -38,7 +38,7 @@ impl Fairing for CORS {
 #[rocket::main]
 async fn main() -> anyhow::Result<()> {
 	let matches = Command::new("clustervms-camera-mgr")
-		.version("0.0.2")
+		.version("0.0.3")
 		.author("Alicrow")
 		.about("Camera manager for ClusterVMS.")
 		.arg(
