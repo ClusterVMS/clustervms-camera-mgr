@@ -38,7 +38,7 @@ impl Fairing for CORS {
 #[rocket::main]
 async fn main() -> anyhow::Result<()> {
 	let matches = Command::new("clustervms-camera-mgr")
-		.version("0.0.3")
+		.version("0.0.4")
 		.author("Alicrow")
 		.about("Camera manager for ClusterVMS.")
 		.arg(
@@ -50,20 +50,20 @@ async fn main() -> anyhow::Result<()> {
 		)
 		.get_matches();
 
+	let mut config_manager = config::ConfigManager::new();
 	let config_filename_matches = matches.get_many::<String>("config");
-	let config_filenames = match config_filename_matches {
-		Some(filenames) => filenames.map(|v| v.as_str()).collect(),
+	match config_filename_matches {
+		Some(filenames) => {
+			config_manager.read_config(filenames.map(|v| v.as_str()).collect())?;
+		},
 		None => {
-			// Not using error! because logging is not yet initialized through Rocket.
-			println!("Error: No config files specified");
-			Vec::new()
+			// Use default file path
+			config_manager.read_default_config_files()?;
 		}
 	};
-	let mut config_manager = config::ConfigManager::new();
-	config_manager.read_config(config_filenames)?;
 
 	rocket::build()
-		.attach(rest_api::stage(&config_manager))
+		.attach(rest_api::stage(config_manager.clone()))
 		.attach(CORS)
 		.launch()
 		.await?;

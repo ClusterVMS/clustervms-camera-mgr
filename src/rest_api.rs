@@ -5,15 +5,16 @@ use rand::{thread_rng, Rng};
 use rand::distributions::{Alphanumeric};
 use rocket::serde::json::{json, Json, Value};
 use rocket::State;
-use std::error;
-use std::ops::Deref;
 use tokio::sync::RwLock;
+use url::Url;
 
 
 
 #[get("/")]
-async fn list_cameras(cameras_state: &State<RwLock<CameraMap>>) -> Json<Vec<BasicCameraInfo>> {
-	let cameras = cameras_state.read().await;
+async fn list_cameras(config_mgr_state: &State<RwLock<ConfigManager>>) -> Json<Vec<BasicCameraInfo>> {
+	let config_mgr = config_mgr_state.read().await;
+	let cameras = &config_mgr.get_config().cameras;
+
 	Json(
 		(*cameras).clone().values()
 		.cloned()
@@ -23,31 +24,67 @@ async fn list_cameras(cameras_state: &State<RwLock<CameraMap>>) -> Json<Vec<Basi
 }
 
 #[get("/?format=full")]
-async fn list_cameras_full(cameras_state: &State<RwLock<CameraMap>>) -> Json<Vec<Camera>> {
-	let cameras = cameras_state.read().await;
-	Json((*cameras).clone().values().cloned().collect())
+async fn list_cameras_full(config_mgr_state: &State<RwLock<ConfigManager>>) -> Json<Vec<Camera>> {
+	let config_mgr = config_mgr_state.read().await;
+	let cameras = &config_mgr.get_config().cameras;
+	Json(cameras.clone().values().cloned().collect())
 }
+
 #[get("/<id>")]
-async fn get_camera(id: CameraId, cameras_state: &State<RwLock<CameraMap>>) -> Option<Json<Camera>> {
-	let cameras = cameras_state.read().await;
+async fn get_camera(id: CameraId, config_mgr_state: &State<RwLock<ConfigManager>>) -> Option<Json<Camera>> {
+	let config_mgr = config_mgr_state.read().await;
+	let cameras = &config_mgr.get_config().cameras;
 	cameras.get(&id).map(|camera| {
 		Json(camera.clone())
 	})
 }
 
+// Creates a new Camera based on the info the user sent
+// The ID in the user-supplied object is ignored (recommended to leave blank), and a new ID is generated.
 #[post("/", data="<camera_json>")]
-async fn new_camera(camera_json: Json<Camera>, cameras_state: &State<RwLock<CameraMap>>) -> Option<Json<Camera>> {
-	let mut cameras = cameras_state.write().await;
+async fn new_camera(camera_json: Json<Camera>, config_mgr_state: &State<RwLock<ConfigManager>>) -> Option<Json<Camera>> {
+	let mut config_mgr = config_mgr_state.write().await;
 	let mut camera = camera_json.into_inner();
-	let id = generate_camera_id(&cameras);
-	cameras.insert(id, camera.clone());
-	write_config_file(cameras.deref()).await;
+	let id = generate_camera_id(&config_mgr.get_config().cameras);
+	camera.id = id.clone();
+
+	let base_url = config_mgr.get_config().base_url.clone();
+
+	// Set up recast stream URLs if not specified
+	for (stream_id, mut stream) in &mut camera.streams {
+		if stream.recast_url.is_none() {
+			stream.recast_url = Url::parse(format!("{base_url}/v0/cameras/{id}/streams/{stream_id}/sdp").as_str()).ok();
+		}
+	}
+
+	config_mgr.get_config_mut().cameras.insert(id.clone(), camera.clone());
+	write_config_file(&config_mgr).await;
+
+	Some(Json(camera))
+}
+
+#[put("/<id>", data="<camera_json>")]
+async fn edit_camera(id: CameraId, camera_json: Json<Camera>, config_mgr_state: &State<RwLock<ConfigManager>>) -> Option<Json<Camera>> {
+	let mut config_mgr = config_mgr_state.write().await;
+	let camera = camera_json.into_inner();
+
+	if id != camera.id {
+		// Camera ID in the body does not match the one in the URL.
+		// This likely means either a poorly-written client, or a deliberate attempt to attack the system.
+		warn!("Camera ID in URL did not match ID in camera object; rejecting request.");
+		return None;
+	}
+
+	config_mgr.get_config_mut().cameras.insert(id.clone(), camera.clone());
+	write_config_file(&config_mgr).await;
+
 	Some(Json(camera))
 }
 
 #[get("/<camera_id>/streams/<stream_id>")]
-async fn get_stream(camera_id: CameraId, stream_id: StreamId, cameras_state: &State<RwLock<CameraMap>>) -> Option<Json<Stream>> {
-	let cameras = cameras_state.read().await;
+async fn get_stream(camera_id: CameraId, stream_id: StreamId, config_mgr_state: &State<RwLock<ConfigManager>>) -> Option<Json<Stream>> {
+	let config_mgr = config_mgr_state.read().await;
+	let cameras = &config_mgr.get_config().cameras;
 	cameras.get(&camera_id).and_then(|camera| {
 		camera.streams.get(&stream_id).map(|stream| {
 			Json(stream.clone())
@@ -65,16 +102,14 @@ pub fn generate_camera_id(existing_ids: &CameraMap) -> CameraId {
 	}
 }
 
-async fn write_config_file_inner(cameras: &CameraMap) -> Result<(), Box<dyn error::Error>> {
-	// Config is split between multiple files, with no strictly-enforced organization.
-	// Ultimately, writing the config will likely be the job of a "config manager" component.
-	// For now, we'll just log a warning.
-	warn!("Writing config file not yet supported");
+async fn write_config_file_inner(config_mgr: &ConfigManager) -> anyhow::Result<()> {
+	config_mgr.write_config()?;
+
 	Ok(())
 }
 
-async fn write_config_file(cameras: &CameraMap) {
-	match write_config_file_inner(cameras).await {
+async fn write_config_file(config_mgr: &ConfigManager) {
+	match write_config_file_inner(config_mgr).await {
 		Ok(_) => {
 			info!("Wrote camera config file");
 		},
@@ -94,18 +129,16 @@ fn not_found() -> Value {
 
 
 
-pub fn stage(config_mgr: &ConfigManager) -> rocket::fairing::AdHoc {
-	let cameras = config_mgr.get_config().cameras.clone();
-	
+pub fn stage(config_mgr: ConfigManager) -> rocket::fairing::AdHoc {
 	// Using tokio::sync::RwLock rather than std::sync::Mutex or std::sync::RwLock so that:
 	//     A.) Multiple readers can read our config at the same time without blocking each other
 	//     B.) A new reader cannot acquire the lock while a writer is waiting for it.
-	let cameras_lock = tokio::sync::RwLock::new(cameras);
+	let config_mgr_lock = tokio::sync::RwLock::new(config_mgr);
 
 	rocket::fairing::AdHoc::on_ignite("JSON", |rocket| async {
 		rocket
-			.manage(cameras_lock)
+			.manage(config_mgr_lock)
 			.register("/", catchers![not_found])
-			.mount("/v0/cameras", routes![list_cameras, list_cameras_full, get_camera, new_camera, get_stream])
+			.mount("/v0/cameras", routes![list_cameras, list_cameras_full, get_camera, edit_camera, new_camera, get_stream])
 	})
 }
